@@ -297,51 +297,27 @@ void HtmlPreview::onHtmlReady()
 {
     QString html = futureWatcher->result();
 
-    if (html == this->html)
+    // Try to find the first difference between the new HTML and the old one.
+    int commonCharacters = std::min(html.size(), this->html.size());
+    auto endOfSearchRange = html.begin() + commonCharacters;
+    auto mismatchPoint = std::mismatch(
+        html.begin(), endOfSearchRange, this->html.begin());
+    int mismatchAtCharacter = mismatchPoint.first - html.begin();
+
+    if ((mismatchPoint.first == endOfSearchRange) && (html.size() == this->html.size()))
     {
-        // Don't bother updating if the HTML didn't change.
+        // Both strings are of the same size and no differences were found in
+        // the common range. This means that they are identical. Dont' bother
+        // updating the HTML, then.
+        //
         return;
     }
 
-    // Find where the change occurred since last time, and slip an
-    // anchor in the location so that we can scroll there.
+    // Slip an anchor into the location of the first difference, so that we can
+    // scroll there.
     //
-    QString anchoredHtml = "";
-
-    QTextStream newHtmlDoc((QString*) &html, QIODevice::ReadOnly);
-    QTextStream oldHtmlDoc((QString*) &(this->html), QIODevice::ReadOnly);
-    QTextStream anchoredHtmlDoc(&anchoredHtml, QIODevice::WriteOnly);
-
-    bool differenceFound = false;
-    QString oldLine = oldHtmlDoc.readLine();
-    QString newLine = newHtmlDoc.readLine();
-
-    while (!oldLine.isNull() && !newLine.isNull() && !differenceFound)
-    {
-        if (oldLine != newLine)
-        {
-            // Found the difference, so insert an anchor point at the
-            // beginning of the line.
-            //
-            differenceFound = true;
-            anchoredHtmlDoc << "<div id=\"livepreviewmodifypoint\" />";
-        }
-        else
-        {
-            anchoredHtmlDoc << newLine << "\n";
-            oldLine = oldHtmlDoc.readLine();
-            newLine = newHtmlDoc.readLine();
-        }
-    }
-
-    // Put any remaining new HTML data into the
-    // anchored HTML string.
-    //
-    while (!newLine.isNull())
-    {
-        anchoredHtmlDoc << newLine << "\n";
-        newLine = newHtmlDoc.readLine();
-    }
+    QString anchoredHtml(html);
+    anchoredHtml.insert(mismatchAtCharacter, "<span id=\"livepreviewmodifypoint\" />");
 
     setHtml(anchoredHtml);
     this->html = html;
@@ -611,6 +587,12 @@ void HtmlPreview::setHtml(const QString& html)
 
     htmlBrowser->setContent(html.toUtf8(), "text/html", baseUrl);
     htmlBrowser->page()->mainFrame()->scrollToAnchor("livepreviewmodifypoint");
+
+    // Adjust the position so that the anchor will be more-or-less centered
+    // vertically.
+    //
+    auto dyScroll = htmlBrowser->page()->viewportSize().height() / 2;
+    htmlBrowser->page()->mainFrame()->scroll(0, -dyScroll);
 }
 
 QString HtmlPreview::exportToHtml
